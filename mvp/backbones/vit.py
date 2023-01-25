@@ -25,7 +25,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     def __init__(self, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
         # remove the classifier
-        del self.pre_logits, self.head
+        # del self.pre_logits, self.head
 
     def extract_feat(self, x):
         B = x.shape[0]
@@ -43,6 +43,27 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
     def forward_norm(self, x):
         return self.norm(x)
+    
+    def forward_attention(self, x, layer):
+        x = self.patch_embed(x)
+        x = self._pos_embed(x)
+        if self.grad_checkpointing and not torch.jit.is_scripting():
+            x = checkpoint_seq(self.blocks, x)
+        else:
+            for (i, block) in enumerate(self.blocks):
+                if i == layer:
+                    x = block.norm1(x)
+                    B, N, C = x.shape
+                    qkv = block.attn.qkv(x).reshape(B, N, 3, block.attn.num_heads, C // block.attn.num_heads).permute(2, 0, 3, 1, 4)
+                    q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)
+
+                    attn = (q @ k.transpose(-2, -1)) * block.attn.scale
+                    attn = attn.softmax(dim=-1)
+                    x = attn
+                    return x
+                else:
+                    x = block(x)
+        return x
 
     def forward(self, x):
         return self.forward_norm(self.extract_feat(x))
