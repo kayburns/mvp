@@ -40,8 +40,6 @@ class KukaMove(BaseTask):
 
         self.up_axis = "z"
         self.up_axis_idx = 2
-
-        self.distX_offset = 0.04
         self.dt = 1 / 60.
 
         self.obs_type = self.cfg["env"]["obs_type"]
@@ -54,7 +52,6 @@ class KukaMove(BaseTask):
             num_obs = 82
             self.compute_observations = self.compute_oracle_obs
         else:
-            self.cam_crop = self.cfg["env"]["cam"]["crop"]
             self.cam_w = self.cfg["env"]["cam"]["w"]
             self.cam_h = self.cfg["env"]["cam"]["h"]
             self.cam_fov = self.cfg["env"]["cam"]["fov"]
@@ -64,7 +61,6 @@ class KukaMove(BaseTask):
             self.im_size = self.cfg["env"]["im_size"]
             num_obs = (3, self.im_size, self.im_size)
             self.compute_observations = self.compute_pixel_obs
-            assert self.cam_crop in ["center", "left"]
             assert self.cam_h == self.im_size
             assert self.cam_w % 2 == 0
 
@@ -476,6 +472,10 @@ class KukaMove(BaseTask):
         self.root_state_tensor[env_ids, self.env_object_ind, 0] = self.object_pos_init[0] + delta_x
         self.root_state_tensor[env_ids, self.env_object_ind, 1] = self.object_pos_init[1] + delta_y
         self.root_state_tensor[env_ids, self.env_object_ind, 2] = self.object_z_init
+        self.root_state_tensor[env_ids, self.env_object_ind, 3:6] = 0.0
+        self.root_state_tensor[env_ids, self.env_object_ind, 6] = 1.0
+        self.root_state_tensor[env_ids, self.env_object_ind, 7:10] = 0.0
+        self.root_state_tensor[env_ids, self.env_object_ind, 10:13] = 0.0
 
         # Reset goal pos
         delta_x = torch_rand_float(
@@ -565,7 +565,7 @@ class KukaMove(BaseTask):
         self.gym.render_all_camera_sensors(self.sim)
         self.gym.start_access_image_tensors(self.sim)
         for i in range(self.num_envs):
-            crop_l = (self.cam_w - self.im_size) // 2 if self.cam_crop == "center" else 0
+            crop_l = (self.cam_w - self.im_size) // 2
             crop_r = crop_l + self.im_size
             self.obs_buf[i] = self.cam_tensors[i][:, crop_l:crop_r, :3].permute(2, 0, 1).float() / 255.
             self.obs_buf[i] = (self.obs_buf[i] - self.im_mean) / self.im_std
